@@ -15,7 +15,7 @@
         # end   
 class Npc
     attr :x, :y, :race, :klass, :text, :book, :page, :chapter, :races, :trigger, :stats, :skills, :default_weapon, :base_dc, :initiate, :names, :choice, :id_t, :b_races, :building
-    attr :red, :health
+    attr :red, :health, :id, :decision, :decision_timer, :path_to_locations, :destination, :agressor
     def initialize
         @races  = { elf: 1, dwarf: 3, goblin: 4, troll: 5}
         @b_races = { elf: 0, dwarf: 1, goblin: 2, troll: 3 }
@@ -52,12 +52,29 @@ class Npc
         @trigger = false
         @book= Array.new(100) { Array.new(100, 0) }
         @initiate = false
+        @decision = "idle"
+        @decision_timer = 0
+        @path_to_locations = Array.new(4) { Array.new(2, 0) }
+        @destination = []
         @names = "NPC"
         @health = 8
+        @agressor = nil
+        @id = [:npc]
         @book = [["Welcome","Tell me about yourself"],
         ["So you are an Elf","Magic folk are wonderful"],
         ["So you are a Dwarf","Must miss the old mines"],["Well this is the setting","Press 1 to draw a card from the NPC deck...","Now kill it"],
         ["Well done. You can convert or kill an enemy to clear a room.", "Clearing a room makes it apart of your domain.", "After all, you are the sovereign temporarily.","Go to the light token in the center.","It will give you a tunnel card."]]
+    end
+
+    def set_locations loc
+        @xx = rand($game.rooms[$game.current_room].size_w).clamp(1,$game.rooms[$game.current_room].size_w - 1)
+        @yy = rand($game.rooms[$game.current_room].size_h).clamp(1,$game.rooms[$game.current_room].size_h - 1)
+        @path_to_locations[loc] = [@xx,@yy] if @path_to_locations[loc] == nil || @path_to_locations[loc][0] == 0
+        if loc < 4
+            loc += 1
+            set_locations(loc)
+        end
+        puts @path_to_locations
     end
 
     def init_elf
@@ -86,6 +103,50 @@ class Npc
         @skills = { thievery: 3, stealth: -1, healing: 3, mend: -1, lockpicking: 5, intimidate: 5, jump: -1, dash: -1 }
         @building = @b_races[:troll]
         @base_dc = 5
+    end
+
+    def walk (target_x, target_y)
+        @set = 0
+        @difx = (target_x - @x).clamp(-1,1)
+        @dify = (target_y - @y).clamp(-1,1)
+        if $game.rooms[$game.current_room].characters[@x + @difx][@y] == $game.rooms[$game.current_room].samples[:floors]
+        @x += @difx
+        puts "walked x"
+        else
+            @set += 1
+            puts "blocked x"
+        end
+        if $game.rooms[$game.current_room].characters[@x ][@y + @dify] == $game.rooms[$game.current_room].samples[:floors]
+            @y += @dify
+            puts "walked y"
+        else
+            @set += 1
+            puts "blocked y"
+        end
+        if @set > 1
+            set_destination()
+            puts "rerouting"
+        end
+    end
+
+    def set_destination
+        @select = rand(3)
+        if @destination[0] == 0
+            
+            @destination[0] = @path_to_locations[@select][0]
+            @destination[1] = @path_to_locations[@select][1]
+            return
+        elsif @destination[0] == @x && @destination[1] == @y
+            @destination[0] = @path_to_locations[@select][0]
+            @destination[1] = @path_to_locations[@select][1]
+            return
+        else
+            @destination[0] = @path_to_locations[@select][0]
+            @destination[1] = @path_to_locations[@select][1]
+        end
+    end
+
+    def idle
     end
 
     def draw
@@ -174,17 +235,33 @@ class Hero
 
     def klass_cleric
         if @race == :dwarf
-            @stats = { melee: 3, ranged: 1, touch: 7, ranged_magic: -1 }
-            @max_stats = { melee: 3, ranged: 1, touch: 7, ranged_magic: -1 }
-            @skills = { thievery: 7, stealth: -1, healing: 7, mend: -1, lockpicking: 3, intimidate: 3, jump: 1, dash: 1 }
+            @stats = { melee: 3, ranged: 1, touch: 6, ranged_magic: -1 }
+            @max_stats = { melee: 3, ranged: 1, touch: 6, ranged_magic: -1 }
+            @skills = { thievery: 6, stealth: -1, healing: 6, mend: -1, lockpicking: 3, intimidate: 3, jump: 1, dash: 1 }
+            @health += 1
         end
         if @race == :elf
             @stats = { melee: 1, ranged: 3, touch: 1, ranged_magic: 5 }
             @max_stats = { melee: 1, ranged: 3, touch: 1, ranged_magic: 5 }
             @skills = { thievery: 1, stealth: 5, healing: 1, mend: 5, lockpicking: 1, intimidate: 1, jump: 3, dash: 3 }
+            @health += 2
+        end
+        
+    end
+
+    def klass_wizard
+        if @race == :dwarf
+            @stats = { melee: 3, ranged: 1, touch: 5, ranged_magic: 1 }
+            @max_stats = { melee: 3, ranged: 1, touch: 5, ranged_magic: 1 }
+            @skills = { thievery: 5, stealth: 1, healing: 5, mend: 1, lockpicking: 3, intimidate: 3, jump: 1, dash: 1 }
+        end
+        if @race == :elf
+            @stats = { melee: 1, ranged: 5, touch: -1, ranged_magic: 5 }
+            @max_stats = { melee: 1, ranged: 5, touch: -1, ranged_magic: 5 }
+            @skills = { thievery: -1, stealth: 5, healing: -1, mend: 5, lockpicking: 1, intimidate: 1, jump: 5, dash: 5 }
         end
         @health += 2
-    end 
+    end
 
     def flair target
         @check = rand(5) + 1 + @detection
@@ -205,25 +282,29 @@ class Hero
 end
 
 class Weapon_Cards 
-    attr :deck, :icon, :x, :y, :encumbrance_chart, :names, :stats
+    attr :deck, :icon, :x, :y, :encumbrance_chart, :names, :stats, :name_list
 
     def initialize
-        @deck = { unarmed: 0, dagger: 1 }
-        @icon = { nothing: 0, dagger: 1 }
-        @encumbrance_chart = { unarmed: 0, dagger: 1 }
+        @deck = { unarmed: 0, dagger: 1, bow: 2 }
+        @icon = { nothing: 0, dagger: 1, bow: 2 }
+        @encumbrance_chart = { unarmed: 0, dagger: 1, bow: 1 }
         @x = 0
         @y = 0
-        @stats = [1,2]
+        @stats = [1,2,2]
+        @name_list = [ "Fist", "Dagger", "Bow"]
     end
 end
 
 class Objects
-    attr :text, :x, :y
+    attr :text, :x, :y, :dc, :loot, :id
 
     def initialize
         @text = ""
         @x = 1
         @y = 1
+        @loot = ""
+        @dc = 0
+        @id = [:object]
     end
 
 end
@@ -241,14 +322,14 @@ end
 
 class Room 
     attr_gtk
-    attr :size_w, :size_h, :trigger, :room_number, :object_count, :npc_deck_drawn, :npc_count, :tile_w, :tile_h, :tiles, :in_dialogue
-    attr :damage_base, :damage_total, :dc, :reduction, :habitations, :habit_count, :population, :loot, :loot_count, :hero, :guide, :domain
+    attr :size_w, :size_h, :trigger, :room_number, :object_count, :npc_deck_drawn, :npc_count, :tile_w, :tile_h, :tiles, :in_dialogue, :characters, :habitations
+    attr :damage_base, :damage_total, :dc, :reduction, :habitations, :habit_count, :population, :loot, :loot_count, :hero, :guide, :domain, :chests, :samples
 
     def initialize
         #@npcs = (50 + rand(50)).map { Npc.new }
         @size_w = [8,10,12,14,16].sample
         @size_h = [8,10,12,14,16].sample
-        @samples = { wall: 6, floors: 9, hero_place: 0, guide_p: 7, elf_statue: 10, dwarf_statue: 11, token: 12 }
+        @samples = { wall: 6, floors: 9, hero_place: 0, guide_p: 7, elf_statue: 10, dwarf_statue: 11, token: 12, chest: 13 }
         @tiles = { wall: 0, floors: 1, water: 2 }
         @room_size = @size_w + @size_h
         @pos_room_x = 1280/2
@@ -269,6 +350,7 @@ class Room
         @characters = Array.new(@size_w) { Array.new(@size_h, 9) }
         puts @room_size.to_s + " size"
         @room = Array.new(@size_w) { Array.new(@size_h, 0) }
+        @chests = []
         for i in (0...@size_w) 
             for j in (0...@size_h)
                 if (i == 0 || i == @size_w - 1 ) || (j == 0 || j == @size_h - 1 )
@@ -285,6 +367,15 @@ class Room
                         @npc_count += 1
                     else
                         @characters[i][j] = @samples[:floors]
+                    end
+                    if @object_count < 1 && rand(50) < 20 && @guide != nil && i != @guide.x && j != @guide.y
+                        @chests << Objects.new
+                        @chests[@object_count].x = i
+                        @chests[@object_count].y = j
+                        @chests[@object_count].dc = rand(6) + 1
+                        @chests[@object_count].loot = 2
+                        @characters[i][j] = @samples[:chest]
+                        @object_count += 1
                     end
                 end
             end
@@ -313,7 +404,7 @@ class Room
     end
 
     def get_name number
-        @names = ["Fist","Dagger"]
+        @names = ["Fist","Dagger","Bow"]
         return @names[number]
     end
 
@@ -364,7 +455,7 @@ class Room
            tile_h: 100
        } 
     end
-
+    
     def ui_button_skill
         {
             x: 100,
@@ -382,7 +473,7 @@ class Room
     def ui_button_spell
         {
             x: 100,
-            y: 360,
+            y: 430 - 70,
             w: 100,
             h: 50,
             path: 'sprites/buttons.png',
@@ -411,6 +502,20 @@ class Room
             h: 50,
             path: 'sprites/buttons.png',
             tile_x: 500,
+            tile_y: 0,
+            tile_w: 100,
+            tile_h: 100
+        }
+    end
+
+    def ui_button_lock
+        {
+            x: 100,
+            y: 430,
+            w: 100,
+            h: 50,
+            path: 'sprites/buttons.png',
+            tile_x: 600,
             tile_y: 0,
             tile_w: 100,
             tile_h: 100
@@ -481,7 +586,7 @@ class Room
                 @guide.text = "This " + get_name(@hero.default_weapon).to_s + " applies " + @hero.default_weapon_stats.to_s + " to your attack roll."
                 @guide.text += " Weighs " + (@hero.default_weapon_stats / 2).to_s if @hero.default_weapon_stats > 1
             end
-                if @object_count > 0 
+                if @object_count > 0 && @elf_statue != nil
                    if distance(@elf_statue.x,@elf_statue.y) && inputs.mouse.point.inside_rect?([(@pos_room_x + (@elf_statue.x *  @tile_w)),( @pos_room_y - (@elf_statue.y * @tile_h) - @tile_h), 32, 32])
                         @guide.text = "This statue is of the Dwarven ruins"
                     end
@@ -541,6 +646,16 @@ class Room
                 @guide.text = "STATS CANCELED"
                 $game.state_of_menu_left = [:default]
                 #@choice = "intimidate"
+                #puts @npc_deck_drawn[@npc_count].x * 32 + @pos_room_x
+            end
+        end
+        if inputs.mouse.point.inside_rect?([100,430,100,50]) && $game.state_of_menu_left == [:skills]
+            @guide.text = "BEGIN LOCKPICKING?" if @choice != "lockpick"
+            if inputs.mouse.click
+                @hero.select_target = true
+                @guide.text = "SELECT TARGET"
+                #$game.state_of_menu_left = [:default]
+                @choice = "lockpick"
                 #puts @npc_deck_drawn[@npc_count].x * 32 + @pos_room_x
             end
         end
@@ -638,6 +753,41 @@ class Room
                 end
             end
         end
+
+        for n in (0..@object_count)
+            if @choice == "lockpick" && @hero.select_target == true && @chests[n] != nil && inputs.mouse.point.inside_rect?([(@chests[n].x * 32) + @pos_room_x ,(-1 * @chests[n].y * 32) + @pos_room_y - 32,32,32])
+                @guide.text = "CHEST SELECTED CLICK TO ENGAGE"
+                if inputs.mouse.click && @hero.race != :noone
+                    @hero.target = @chests[n]
+
+                        puts "pick"
+                       if picklock(@hero.target)
+                        spawn_loot(@hero.target)
+                        @hero.target = nil
+                        @chests.delete_at(n)
+                        @object_count -= 1
+                        @choice = "nothing"
+                        @hero.select_target = false
+                       end
+                end
+                @guide.text = "SELECT A RACE FIRST" if @hero.race == :noone
+            end
+        end
+    end
+
+    def picklock(target)
+        @base = roll_d6() + @hero.skills[:lockpicking]
+        if @base >= target.dc
+            @guide.text = "Picked"
+            @characters[target.x][target.y] = @samples[:floors]
+            puts "success"
+            return true
+        else
+            @guide.text = "Failure DC: " + target.dc.to_s + " you rolled a " + @base.to_s
+            puts "failure" + target.dc.to_s
+            @choice = "nothing"
+            return false
+        end
     end
 
     def intimidate target
@@ -724,24 +874,48 @@ class Room
         elsif t.elapsed? && @choice != "attack"
             @choice = "nothing"
             ai()
-            $trigger = false
         end
     end
 
-    def ai
-                retaliation(@hero.target,@hero)
-                @choice = "nothing"
+    def ai target
+        if (target.initiate == true || target.agressor != nil) && distance_melee(target.x,target.y)
+            retaliation(target,@hero)
+            @choice = "nothing"
+            target.decision = "attack"
+        end
+        if target.decision == "idle" && target.names != "GUIDE"
+            target.decision = "walk" if rand(6) > 4
+        end
+        if target.decision == "attack" && !distance_melee(target.x,target.y)
+            if rand(6) > 3
+                target.decision = "idle"
+                target.initiate = false
+            else
+                target.decision = "walk"
+                target.initiate = false
+            end
+        end
+        if target.decision == "walk"
+            target.set_destination()
+            @characters[target.x][target.y] = @samples[:floors]
+            target.walk(target.destination[0],target.destination[1]) if target.names != "GUIDE"
+            update_npc(target) if target.names != "GUIDE"
+        end
     end
 
     def attack atk, defe
         @damage_base = roll_d6() 
         puts @damage_base 
         puts atk
+        if defe.id == [:npc]
+            defe.agressor = atk
+        end
         @damage_total = @damage_base + atk.default_weapon 
         @dc = defe.base_dc
         if @damage_total >= @dc && defe.red != 4
             defe.stats[apply_damage(defe)] -= 1 if defe.red < 3
             defe.health -= 1
+            @guide.text = "hit" + "dc" + @dc.to_s + " atk " + @damage_total.to_s + " to " + defe.names
             puts "hit" + "dc" + @dc.to_s + " atk " + @damage_total.to_s + " to " + defe.names
         else
             puts "dc" + @dc.to_s + " atk " + @damage_total.to_s + " to " + defe.names
@@ -753,7 +927,7 @@ class Room
     end
 
     def retaliation defe, atk
-        attack(defe,atk) unless @guide.text == "TARGET IS DEAD"
+        attack(defe,atk) if @guide.text != "TARGET IS DEAD" 
         @hero.target = nil
         defe.initiate = false
     end
@@ -763,13 +937,23 @@ class Room
     end
 
     def spawn_loot target
-        if @room_number == 0
+        if @room_number == 0 && target.id == [:npc] && @hero.default_weapon == 0
             @loot << Weapon_Cards.new
             @loot[@loot_count].icon = 1
             @loot[@loot_count].x = target.x
             @loot[@loot_count].y = target.y
             @loot[@loot_count].names = "Dagger"
             @guide.text = "Walk on the loot to equip."
+            @loot_count += 1
+        end
+        if target.id == [:object]
+            @loot << Weapon_Cards.new 
+            @loot[@loot_count].icon = target.loot
+            @loot[@loot_count].x = target.x
+            @loot[@loot_count].y = target.y
+            @loot[@loot_count].names = get_name(target.loot)
+            @guide.text = "Walk on the loot to equip."
+            @guide.text += " This will replace your current weapon" if target.loot == 2 || target.loot == 1
             @loot_count += 1
         end
     end
@@ -820,7 +1004,7 @@ class Room
         end
     end
 
-    def distance_melee a, b
+    def distance_habitat a,b
         if (@hero.x - a).abs + (@hero.y - b).abs > 2
             #puts "far"
             return false 
@@ -829,16 +1013,31 @@ class Room
         end
     end
 
+    def distance_melee a, b
+        if (@hero.x - a).abs + (@hero.y - b).abs > 2
+            #puts "far"
+            return false 
+        else
+            return true
+            puts "close enough"
+        end
+    end 
+
     def take_loot i 
         @hero.default_weapon = @loot[i-1].icon
         if @loot[i-1].icon == 1
             @hero.klass = :cleric
             @hero.klass_cleric()
         end
+        if @loot[i-1].icon == 2
+            @hero.klass = :wizard
+            @hero.klass_wizard()
+        end
         @hero.encumbrance = @hero.default_weapon
         @hero.default_weapon_stats = @loot[i-1].stats[@loot[i-1].icon]
         @loot_count -= 1
         @loot.delete_at(i)
+        $game.music_theme = 1
     end
 
     def input args
@@ -857,7 +1056,7 @@ class Room
         # end
         if inputs.keyboard.key_down.raw_key
             @guide.text = ""
-            if @guide.chapter == 0 && @guide.page == 1
+            if @guide.chapter == 0 && @guide.page == 1 && object_count < 2
                 spawn_objects()
             end
             @choice = "nothing" if @choice == "looked"
@@ -1008,6 +1207,14 @@ class Room
         @elf_statue.y = (@guide.y - @hero.y).clamp(2,@size_h-1)
         @dwarf_statue.x = (@guide.x - @hero.x - 1).clamp(3,@size_w-1)
         @dwarf_statue.y = (@guide.y - @hero.y - 1).clamp(3,@size_h-1)
+        if @characters[@elf_statue.x][@elf_statue.y] != @samples[:floors]
+            @elf_statue.x += 1
+            @elf_statue.y += 1
+        end
+        if @characters[@dwarf_statue.x][@dwarf_statue.y] != @samples[:floors]
+            @elf_statue.x += 1
+            @elf_statue.y += 1
+        end
         @characters[@elf_statue.x][@elf_statue.y] = @samples[:elf_statue]
         @characters[@dwarf_statue.x][@dwarf_statue.y] = @samples[:dwarf_statue]
         @object_count += 2
@@ -1036,17 +1243,22 @@ class Room
                 #puts (@npc_deck_drawn[@npc_count].y - @pos_room_y).to_s + "y"
                 #puts @npc_deck_drawn[@npc_count].names
                 @guide.text = "NPC has been detected!1.0"
+                @npc_deck_drawn[@npc_count].set_locations(0)
     end
 
     def update
         @characters[@hero.x][@hero.y] = @hero.races[@hero.race]
+    end
+
+    def update_npc npc
+        @characters[npc.x][npc.y] = npc.races[npc.race] if npc.names != "GUIDE"
     end
 end
 
 
 class DM
     attr_gtk
-    attr :state_of_menu_left, :state_of_menu_top, :rooms, :world_size_w, :world_size_h, :current_room, :music_list, :music_current, :volume
+    attr :state_of_menu_left, :state_of_menu_top, :rooms, :world_size_w, :world_size_h, :current_room, :music_list, :music_current, :volume, :music_theme
 
     def initialize
         @state_of_menu_left = [:default]
@@ -1056,8 +1268,9 @@ class DM
         @current_room = 0
         @rooms[@current_room].room_number = 0
         puts @rooms[@current_room].hero
-        @music_list = ["knights_of_kalvgv_main_theme.ogg","knights_of_kalvgv_main_theme_variant_2.ogg","knights_of_kalvgv_main_theme_variant_3.ogg"]
-        @music_current = @music_list.sample
+        @music_list = [["knights_of_kalvgv_main_theme.ogg","knights_of_kalvgv_main_theme_variant_2.ogg","knights_of_kalvgv_main_theme_variant_3.ogg"],["kinghts_of_kalvgv_slight_relief.ogg"]]
+        @music_theme = 0
+        @music_current = @music_list[@music_theme].sample
         #puts audio[:my_audio]
     end
 
@@ -1084,9 +1297,10 @@ class DM
     end
 
     def check_healing_near
-        if @rooms[@current_room].habit_count > 0
-            for a in (0..@rooms[@current_room].habit_count)
-                if distance_habitat(@rooms[@current_room].habitations[a-1], @rooms[@current_room].hero)
+        if @rooms[@current_room].habit_count > 0 && $timer.elapsed?
+            for a in (0...@rooms[@current_room].habit_count)
+                #puts a, @rooms[@current_room].habitations[a].x
+                if @rooms[@current_room].distance_habitat(@rooms[@current_room].habitations[a].x,@rooms[@current_room].habitations[a].y)
                     heal_player(@rooms[@current_room].hero) if @rooms[@current_room].hero.max_health != @rooms[@current_room].hero.health
                 end
             end
@@ -1102,27 +1316,24 @@ class DM
             target.stats[:ranged] += 1
             target.health += 1
             return puts "healed ranged"
-        return true
-       else
-        return false
        end
     end
 
     def tick args
-        $time_now ||= 0
-        $trigger ||= false
+        $timer ||= 0
+        $timer = state.tick_count + 60 if $timer == state.tick_count
         if @rooms[@current_room].hero.line_of_sight == 3 && @rooms[@current_room].hero.race == :elf || @rooms[@current_room].hero.race == :dwarf
             @rooms[@current_room].hero.line_of_sight = 5
         end
         for i in (0..@rooms[@current_room].npc_count)
             #puts $time_now
-            if @rooms[@current_room].hero.target != nil && @rooms[@current_room].hero.target.initiate == true && $time_now < state.tick_count && $trigger == false
-                $time_now = state.tick_count + 45
-                puts $time_now.to_s + " count to"
-                $trigger = true
+            if  @rooms[@current_room].npc_count > 0 && @rooms[@current_room].npc_deck_drawn[i].decision_timer < state.tick_count && @rooms[@current_room].npc_deck_drawn[i].names != "guide"
+                @rooms[@current_room].ai(@rooms[@current_room].npc_deck_drawn[i])
+                @rooms[@current_room].npc_deck_drawn[i].decision_timer = state.tick_count + 45
+                puts @rooms[@current_room].npc_deck_drawn[i].decision_timer.to_s + " count to"
             end
-            if @rooms[@current_room].npc_deck_drawn[i].initiate == true
-                @rooms[@current_room].timer($time_now, @rooms[@current_room].npc_deck_drawn[i])
+            if @rooms[@current_room].npc_deck_drawn[i].initiate == true && @rooms[@current_room].npc_deck_drawn[i].names != "guide"
+                @rooms[@current_room].timer(@rooms[@current_room].npc_deck_drawn[i].decision_timer , @rooms[@current_room].npc_deck_drawn[i])
             end
         end
 
@@ -1150,6 +1361,7 @@ class DM
             end
         if @state_of_menu_left == [:skills]
             outputs.sprites << @rooms[@current_room].ui_button_int()
+            outputs.sprites << @rooms[@current_room].ui_button_lock()
         end
         if @state_of_menu_left == [:stats]
             outputs.labels << [80, 520, "STAT BLOCK"]
@@ -1186,6 +1398,6 @@ end
 def tick args
     $game ||= DM.new
     $game.args = args and $game.rooms[$game.current_room].args = args and $game.args.state = args.state and $game.tick(args)
-    $game.music_current = $game.music_list.sample and $game.play_music(args) if $game.args.audio[:my_audio] == nil
+    $game.music_current = $game.music_list[$game.music_theme].sample and $game.play_music(args) if $game.args.audio[:my_audio] == nil
     $game.args.audio = args.audio #and puts args.audio
 end
